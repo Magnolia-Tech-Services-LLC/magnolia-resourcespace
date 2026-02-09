@@ -90,7 +90,8 @@ export function withCollections<T extends RSClientCore>(client: T): T & Collecti
     },
 
     async getFeaturedCollections(parent: number): Promise<Collection[]> {
-      validateId(parent, 'parent collection ID');
+      // Allow parent=0 (root level) since RS uses 0 for top-level featured collections
+      if (parent !== 0) validateId(parent, 'parent collection ID');
       const data = await client.makeRequest<unknown[]>('get_featured_collections', {
         parent: parent.toString(),
       });
