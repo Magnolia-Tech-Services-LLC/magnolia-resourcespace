@@ -1,357 +1,224 @@
-# Shared ResourceSpace Library
+# magnolia-resourcespace: Shared ResourceSpace API Client Library
 
 ## Context
 
-Both **magnolia-canopy** and **magnolia-photos-frontend** integrate with ResourceSpace using identical signature generation. Rather than a minimal core, we're creating a **comprehensive ResourceSpace API client** as a standalone repo that can be used as a git submodule in both projects.
+Both **magnolia-canopy** (copyright protection) and **magnolia-photos-frontend** (photo gallery) integrate with ResourceSpace. Both are early-stage projects that will grow. Building a shared, neutral RS client now — while both consumers are malleable — avoids painful retrofitting later. Additional future projects may also need RS access.
 
-**Goals:**
-1. Create a new standalone repository for the ResourceSpace client library
-2. Support **all ResourceSpace API endpoints** (not just the ones currently used)
-3. Maintain backwards compatibility with existing project implementations
-4. Use git submodules for integration
-5. Create GitHub issues for future enhancements
+The photos-frontend already has a mature ~960-line RS client with hard-won production knowledge (auth quirks, response normalization, security patterns). We'll adopt that code as the starting point rather than building from scratch.
+
+**Key design principle:** The library is fully featured, but consumers opt into only the capabilities they need — enforced at the TypeScript type level via a mixin/capability pattern. An app that only needs search never sees `deleteResource` in autocomplete.
 
 ---
 
-## Library Design
+## Architecture
 
-### Repository
-- **Name:** `magnolia-resourcespace`
-- **Location:** `Magnolia-Tech-Services-LLC/magnolia-resourcespace`
-- **Language:** TypeScript with ESM + CJS dual output
-- **Dependencies:** Minimal (only `crypto` from Node.js)
+### Capability-Based Mixin Pattern
 
-### Architecture
+```
+RSClientCore (auth, signing, HTTP, response normalization)
+  + withSearch()        → search, searchByField
+  + withResources()     → getResource, getResourcePath, createResource, copyResource, deleteResource, ...
+  + withCollections()   → getCollections, createCollection, addToCollection, ...
+  + withFields()        → getFields, getFieldOptions, getNodes, updateField, ...
+  + withUsers()         → getUser, getUsers, createUser, saveUser, ...
+  + withSystem()        → getResourceTypes, getApiVersion, getSystemStatus
+  + withBatch()         → batchFieldUpdate, batchDelete, batchCollectionAdd, ...
+  + withUpload()        → uploadFile, addAlternativeFile
+```
+
+Each `with*()` function returns the client with additional methods added at the type level. Consumers compose what they need:
+
+```typescript
+// Guest app — read-only, no dangerous methods exist on the type
+const api = createClient(config, withSearch, withResources, withCollections);
+
+// Admin app — full access
+const api = createClient(config, withSearch, withResources, withCollections, withFields, withUsers, withBatch);
+```
+
+### Pre-composed factory functions for common patterns
+
+```typescript
+createReadOnlyClient(config)  → search + resources (read) + collections (read) + fields (read) + system
+createStandardClient(config)  → above + resources (write) + collections (write) + fields (write)
+createAdminClient(config)     → above + users + batch + upload
+```
+
+---
+
+## Security Model
+
+### Tiered API Classification
+
+**Safe (read-only):** search, get_resource_data, get_resource_path, get_resource_field_data, get_field_options, get_nodes, get_resource_types, get_featured_collections, get_users, etc.
+
+**Mutating (limited risk):** update_field, create_resource, create_collection, add_to_collection, upload_file, set_node — RS enforces resource-level permissions.
+
+**Dangerous (require explicit opt-in via capabilities):**
+- `save_user` — MUST use field allowlist: `fullname, email, password, comments` only. Block `usergroup`, `approved`, `ip_restrict`.
+- `new_user` — MUST accept usergroup as a library config option, never from caller input.
+- `delete_resource`, `batch_delete` — available only via `withResources()` or `withBatch()`.
+- `batch_*` operations — enforce configurable max batch size (default 100).
+- System config mutations — NOT exposed in the library at all.
+
+### Hardcoded Security Controls (built into the library, not configurable)
+
+1. **save_user field allowlist** — only safe fields pass through, always
+2. **new_user usergroup** — read from client config, never from function parameters
+3. **approved=0 enforcement** — new users always created as pending
+4. **Batch size limits** — configurable but enforced
+5. **Sensitive data redaction** — passwords/keys never appear in logs
+
+---
+
+## File Structure
 
 ```
 magnolia-resourcespace/
 ├── package.json
 ├── tsconfig.json
+├── tsup.config.ts
+├── vitest.config.ts
+├── .gitignore
+├── CLAUDE.md                     (update existing)
+├── PLAN.md                       (update existing)
 ├── README.md
 ├── src/
-│   ├── index.ts                    # Main exports
-│   ├── client.ts                   # ResourceSpaceClient class
-│   ├── auth/
-│   │   ├── signature.ts            # SHA256 signing
-│   │   └── session.ts              # Session key auth
-│   ├── api/
-│   │   ├── resources.ts            # Resource CRUD operations
-│   │   ├── search.ts               # Search functionality
-│   │   ├── collections.ts          # Collection management
-│   │   ├── users.ts                # User management
-│   │   ├── fields.ts               # Field/metadata operations
-│   │   ├── upload.ts               # File upload
-│   │   └── system.ts               # System info, stats
-│   ├── types/
-│   │   ├── config.ts               # Configuration interfaces
-│   │   ├── resource.ts             # Resource types
-│   │   ├── collection.ts           # Collection types
-│   │   ├── user.ts                 # User types
-│   │   └── api-responses.ts        # API response shapes
+│   ├── index.ts                  # Public API exports
+│   ├── core/
+│   │   ├── client.ts             # RSClientCore class (auth, signing, HTTP, response normalization)
+│   │   ├── config.ts             # Configuration types and validation
+│   │   ├── errors.ts             # ResourceSpaceError hierarchy
+│   │   └── types.ts              # Shared types (Resource, Collection, User, Field, etc.)
+│   ├── capabilities/
+│   │   ├── search.ts             # withSearch()
+│   │   ├── resources.ts          # withResources()
+│   │   ├── collections.ts        # withCollections()
+│   │   ├── fields.ts             # withFields()
+│   │   ├── users.ts              # withUsers() — includes security hardening
+│   │   ├── system.ts             # withSystem()
+│   │   ├── batch.ts              # withBatch() — includes size limits
+│   │   └── upload.ts             # withUpload()
+│   ├── factories.ts              # createReadOnlyClient, createStandardClient, createAdminClient
 │   └── utils/
-│       ├── query-builder.ts        # URL query construction
-│       ├── url-rewriter.ts         # Docker-aware URL rewriting
-│       └── errors.ts               # Custom error classes
+│       ├── signature.ts          # SHA256 signing (extracted from photos-frontend)
+│       ├── query-builder.ts      # URLSearchParams construction with ordering
+│       ├── response.ts           # Response normalization (JSON strings, error detection, etc.)
+│       └── url-rewriter.ts       # Docker internal URL rewriting
 ├── tests/
-│   └── *.test.ts
-└── dist/                           # Compiled output
-```
-
-### Core Client Class
-
-```typescript
-// src/client.ts
-export class ResourceSpaceClient {
-  constructor(config: ResourceSpaceConfig)
-
-  // Configuration
-  static fromEnv(prefix?: string): ResourceSpaceClient
-  validateConfig(): { valid: boolean; errors: string[] }
-
-  // Auth modes
-  withApiKey(user: string, key: string): ResourceSpaceClient
-  withSessionKey(user: string, sessionKey: string): ResourceSpaceClient
-
-  // Resource operations (all RS API functions)
-  getResource(ref: number): Promise<Resource>
-  getResourceData(ref: number): Promise<ResourceData>
-  getResourcePath(ref: number, options?: PathOptions): Promise<string>
-  getResourceFieldData(ref: number, field: number): Promise<FieldData>
-  updateField(ref: number, field: number, value: string): Promise<boolean>
-  createResource(type: number, archive?: number): Promise<number>
-  copyResource(from: number): Promise<number>
-  deleteResource(ref: number): Promise<boolean>
-
-  // Search
-  search(query: string, options?: SearchOptions): Promise<SearchResult>
-  searchByField(field: number, value: string): Promise<Resource[]>
-  advancedSearch(params: AdvancedSearchParams): Promise<SearchResult>
-
-  // Collections
-  getCollections(user?: number): Promise<Collection[]>
-  getCollectionResources(collection: number): Promise<Resource[]>
-  createCollection(name: string): Promise<number>
-  addToCollection(collection: number, resource: number): Promise<boolean>
-  getFeaturedCollections(parent?: number): Promise<Collection[]>
-
-  // Users
-  getUser(identifier: string | number): Promise<User>
-  createUser(params: CreateUserParams): Promise<number>
-  updateUser(ref: number, data: Partial<User>): Promise<boolean>
-  checkCredentials(username: string, password: string): Promise<SessionKey | null>
-
-  // Fields & Metadata
-  getFields(resourceType?: number): Promise<Field[]>
-  getFieldOptions(field: number): Promise<FieldOption[]>
-  getNodes(field: number): Promise<Node[]>
-
-  // System
-  getSystemStatus(): Promise<SystemStatus>
-  getResourceTypes(): Promise<ResourceType[]>
-  getApiVersion(): Promise<string>
-}
-```
-
-### Configuration Interface
-
-```typescript
-// src/types/config.ts
-export interface ResourceSpaceConfig {
-  baseUrl: string           // e.g., "https://dam.magnolia.photos"
-  user: string              // API user or username
-  secret: string            // API key or session key
-  authMode: "apiKey" | "sessionKey"
-
-  // Optional
-  internalUrl?: string      // Docker internal URL for server-side
-  timeout?: number          // Request timeout (default: 30000)
-  retries?: number          // Retry count (default: 0)
-}
-
-export function createConfig(options: Partial<ResourceSpaceConfig>): ResourceSpaceConfig
-export function configFromEnv(prefix?: string): ResourceSpaceConfig | null
-```
-
----
-
-## Backwards Compatibility
-
-### For magnolia-canopy
-
-Current usage in `src/lib/resourcespace.ts`:
-- `getResource(ref)` ✅ Supported
-- `getResourceField(ref, field)` ✅ Supported as `getResourceFieldData`
-- `getPreviewUrl(ref, size)` ✅ Supported via `getResourcePath`
-- `getResourcePath(ref, size, watermarked)` ✅ Supported
-- `isConfigured()` ✅ Supported via `validateConfig`
-
-**Migration:** Create thin wrapper that uses the new client internally.
-
-### For magnolia-photos-frontend
-
-Current usage across 4 files:
-- All `ResourceSpaceAPI` methods ✅ Mapped to new client
-- `ResourceSpaceAuth` methods ✅ Included in client
-- Session key authentication ✅ Supported via `authMode: "sessionKey"`
-- Docker URL rewriting ✅ Via `internalUrl` config option
-
-**Migration:** Replace internal implementation with new client, keep existing public API.
-
----
-
-## Git Submodule Integration
-
-### Adding to Projects
-
-```bash
-# In magnolia-canopy
-git submodule add https://github.com/Magnolia-Tech-Services-LLC/magnolia-resourcespace.git lib/resourcespace-client
-git submodule update --init
-
-# In magnolia-photos-frontend
-git submodule add https://github.com/Magnolia-Tech-Services-LLC/magnolia-resourcespace.git lib/resourcespace-client
-git submodule update --init
-```
-
-### Package.json Reference
-
-```json
-{
-  "dependencies": {
-    "@magnolia/resourcespace": "file:./lib/resourcespace-client"
-  }
-}
-```
-
-### Updating Submodule
-
-```bash
-cd lib/resourcespace-client
-git pull origin main
-cd ..
-git add lib/resourcespace-client
-git commit -m "chore: update resourcespace client"
+│   ├── core/
+│   │   ├── signature.test.ts
+│   │   ├── query-builder.test.ts
+│   │   ├── response.test.ts
+│   │   └── client.test.ts
+│   ├── capabilities/
+│   │   ├── search.test.ts
+│   │   ├── resources.test.ts
+│   │   ├── users.test.ts         # Security tests (field allowlist, usergroup hardcoding)
+│   │   └── batch.test.ts         # Batch size limit tests
+│   └── security/
+│       ├── save-user-allowlist.test.ts
+│       ├── new-user-usergroup.test.ts
+│       └── batch-limits.test.ts
+└── dist/                         # Build output (ESM + CJS)
 ```
 
 ---
 
 ## Implementation Phases
 
-### Phase 1: Repository Setup (30 min)
-1. Create GitHub repo `Magnolia-Tech-Services-LLC/magnolia-resourcespace`
-2. Initialize with TypeScript, ESLint, Vitest
-3. Set up dual ESM/CJS build with tsup
-4. Add CI workflow for tests
+### Phase 1: Repository Setup
+- package.json, tsconfig.json, tsup.config.ts, vitest.config.ts, .gitignore
+- ESM + CJS dual output via tsup
+- Vitest for testing
 
-### Phase 2: Core Infrastructure (1 hour)
-1. Implement signature generation
-2. Implement query builder with auth modes
-3. Create base client class with HTTP handling
-4. Add configuration validation
-5. Add custom error classes
+**Files:** package.json, tsconfig.json, tsup.config.ts, vitest.config.ts, .gitignore
 
-### Phase 3: API Methods - Resources (1.5 hours)
-1. `get_resource_data` - Get resource metadata
-2. `get_resource_field_data` - Get field value
-3. `get_resource_path` - Get image URL
-4. `update_field` - Update metadata
-5. `create_resource` - Create new resource
-6. `copy_resource` - Duplicate resource
-7. `delete_resource` - Remove resource
-8. `get_resource_log` - Activity history
-9. `get_related_resources` - Related items
+### Phase 2: Core Infrastructure
+Adopt from `/Users/greer/dev/magnolia-photos-frontend/lib/resourcespace-api.ts`:
+- **Signature generation** (lines 36-44): `SHA256(secret + queryString)`
+- **Query building** (lines 47-58): URLSearchParams with user prepended
+- **Signed query with authmode handling** (lines 64-85): authmode excluded from signature, appended after
+- **Response normalization** (lines 122-259): JSON string parsing, error string detection, null handling
+- **URL rewriting** (lines 102-120): Docker internal URL substitution
+- **Error classes**: typed errors preserving RS context
 
-### Phase 4: API Methods - Search (1 hour)
-1. `do_search` - Full-text search
-2. `search_get_previews` - Search with previews
-3. `get_search_results` - Paginated results
+**Key RS quirks to encode:**
+- All requests MUST be GET (RS validates signature against QUERY_STRING)
+- `authmode=sessionkey` added AFTER signature computation
+- RS returns errors as 200 responses with error strings
+- `get_resource_path` returns JSON-encoded string, not plain string
+- Response formats vary: arrays, wrapped objects `{resources:[...]}`, strings, null
 
-### Phase 5: API Methods - Collections (45 min)
-1. `get_user_collections` - User's collections
-2. `get_collection_resources` - Collection contents
-3. `create_collection` - New collection
-4. `add_resource_to_collection` - Add item
-5. `remove_resource_from_collection` - Remove item
-6. `get_featured_collections` - Featured/public
-7. `get_featured_collection_categories` - Categories
+**Files:** src/core/client.ts, src/core/config.ts, src/core/errors.ts, src/core/types.ts, src/utils/signature.ts, src/utils/query-builder.ts, src/utils/response.ts, src/utils/url-rewriter.ts
 
-### Phase 6: API Methods - Users (45 min)
-1. `get_user` - User lookup
-2. `get_users` - List users
-3. `new_user` - Create user
-4. `save_user` - Update user
-5. `get_user_by_username` - Username lookup
-6. `check_credentials` - Login validation
+### Phase 3: Capability System + Search
+- Implement mixin pattern infrastructure
+- `withSearch()`: search, searchByField (via do_search with `!field` syntax)
+- Wire up factories (createReadOnlyClient, etc.)
+- First tests
 
-### Phase 7: API Methods - Fields (30 min)
-1. `get_resource_type_fields` - Field definitions
-2. `get_field_options` - Dropdown options
-3. `get_nodes` - Hierarchical nodes
+**Files:** src/capabilities/search.ts, src/factories.ts, src/index.ts, tests/capabilities/search.test.ts
 
-### Phase 8: API Methods - System (30 min)
-1. `get_resource_types` - Available types
-2. `get_api_version` - API version
-3. `get_system_status` - Health check
+### Phase 4: Resources Capability
+Adopt from photos-frontend `getResource`, `getResourceFieldData`, `getResourcePath` methods:
+- Read: getResource, getResourceData, getResourcePath, getResourceFieldData, getResourceLog, getRelatedResources
+- Write: createResource, copyResource, deleteResource, updateField
 
-### Phase 9: Testing & Documentation (1 hour)
-1. Unit tests for all methods
-2. Integration tests with mock server
-3. README with examples
-4. JSDoc comments
-5. Type exports
+**Files:** src/capabilities/resources.ts, tests/capabilities/resources.test.ts
 
-### Phase 10: Project Integration (1 hour)
-1. Add submodule to magnolia-canopy
-2. Update canopy's resourcespace.ts wrapper
-3. Add submodule to magnolia-photos-frontend
-4. Update frontend's ResourceSpaceAPI class
-5. Test both projects end-to-end
+### Phase 5: Collections Capability
+Adopt from photos-frontend `getCollectionResources`, `getAllFeaturedCollections`, `getFeaturedCollections`:
+- getCollections, getCollectionResources, createCollection, deleteCollection
+- addToCollection, removeFromCollection
+- getFeaturedCollections, getAllFeaturedCollections
+- searchCollections, shareCollection
 
----
+**Files:** src/capabilities/collections.ts, tests/capabilities/collections.test.ts
 
-## GitHub Issues to Create
+### Phase 6: Fields Capability
+Adopt from photos-frontend `getFields`, `getFieldOptions`, `resolveFieldOptionDisplayName`:
+- getFields, getFieldOptions, getFieldValues, getNodes
+- updateField, setNode
+- resolveFieldOptionDisplayName (node ref → display name)
 
-After initial implementation, create these enhancement issues:
+**Files:** src/capabilities/fields.ts, tests/capabilities/fields.test.ts
 
-### High Priority
-1. **Add request caching layer** - Cache responses for configurable TTL
-2. **Add request queuing/rate limiting** - Prevent API throttling
-3. **Add retry logic with exponential backoff** - Handle transient failures
-4. **Add streaming upload support** - Large file uploads
+### Phase 7: Users Capability (Security-Critical)
+Adopt from photos-frontend `saveUser`, `getUser`, `getFullUser`, `getUserRef` AND from `resourcespace-user-creator.ts`:
+- getUser, getUsers, getUserRef
+- createUser — hardcoded usergroup from config, approved=0 enforced
+- saveUser — field allowlist enforced (fullname, email, password, comments only)
+- checkCredentials (login)
 
-### Medium Priority
-5. **Add webhook signature validation** - Verify RS webhooks
-6. **Add batch operations** - Bulk update/delete
-7. **Add resource watching** - Poll for changes
-8. **Add offline mode** - Queue operations when offline
+Security tests:
+- Verify save_user strips disallowed fields (usergroup, approved, ip_restrict)
+- Verify createUser always uses config usergroup, never caller-provided
+- Verify createUser sets approved=0
 
-### Documentation
-9. **Add API reference docs** - Generated from JSDoc
-10. **Add migration guide** - From project-specific implementations
-11. **Add cookbook examples** - Common use cases
+**Files:** src/capabilities/users.ts, tests/capabilities/users.test.ts, tests/security/save-user-allowlist.test.ts, tests/security/new-user-usergroup.test.ts
 
----
+### Phase 8: System, Batch, Upload Capabilities
+- `withSystem()`: getResourceTypes, getApiVersion, getSystemStatus
+- `withBatch()`: batchFieldUpdate, batchDelete, batchCollectionAdd/Remove, batchNodesAdd/Remove, batchArchiveStatus — all enforce configurable max batch size
+- `withUpload()`: uploadFile, addAlternativeFile
 
-## Files to Create/Modify
+**Files:** src/capabilities/system.ts, src/capabilities/batch.ts, src/capabilities/upload.ts, tests/capabilities/batch.test.ts, tests/security/batch-limits.test.ts
 
-### New Repository Files
-```
-magnolia-resourcespace/
-├── package.json
-├── tsconfig.json
-├── tsup.config.ts          # Build config
-├── vitest.config.ts        # Test config
-├── .github/workflows/ci.yml
-├── README.md
-├── src/index.ts
-├── src/client.ts
-├── src/auth/signature.ts
-├── src/auth/session.ts
-├── src/api/resources.ts
-├── src/api/search.ts
-├── src/api/collections.ts
-├── src/api/users.ts
-├── src/api/fields.ts
-├── src/api/system.ts
-├── src/types/*.ts
-├── src/utils/*.ts
-└── tests/*.test.ts
-```
+### Phase 9: Documentation + Final Tests
+- README.md with usage examples for each capability level
+- Verify build output (ESM + CJS)
+- Run full test suite
 
-### magnolia-canopy Updates
-- `package.json` - Add submodule dependency
-- `.gitmodules` - Add submodule entry
-- `src/lib/resourcespace.ts` - Use new client (thin wrapper)
-
-### magnolia-photos-frontend Updates
-- `package.json` - Add submodule dependency
-- `.gitmodules` - Add submodule entry
-- `lib/resourcespace-api.ts` - Use new client internally
+**Files:** README.md, CLAUDE.md (update)
 
 ---
 
 ## Verification
 
-1. **New library tests pass:** `npm test` in magnolia-resourcespace
-2. **Canopy integration:** Trigger a scan, verify ResourceSpace URLs work
-3. **Frontend integration:** Test login, gallery loading, user profile
-4. **Signature compatibility:** Both projects generate identical signatures
-5. **Session key auth:** Frontend login flow still works
-
----
-
-## Estimate
-
-| Phase | Time |
-|-------|------|
-| Repository setup | 30 min |
-| Core infrastructure | 1 hour |
-| Resource API methods | 1.5 hours |
-| Search API methods | 1 hour |
-| Collections API methods | 45 min |
-| Users API methods | 45 min |
-| Fields API methods | 30 min |
-| System API methods | 30 min |
-| Testing & documentation | 1 hour |
-| Project integration | 1 hour |
-| **Total** | **~8 hours** |
+1. `npm run build` — produces dist/ with ESM + CJS output
+2. `npm run test` — all tests pass including security tests
+3. `npm run typecheck` — no TypeScript errors
+4. **Type-level verification**: confirm dangerous methods don't appear on read-only clients (write a test file that should fail typecheck)
+5. **Security verification**: tests confirm field allowlists, usergroup hardcoding, batch limits
+6. **Signature compatibility**: verify signature output matches both photos-frontend and canopy implementations for identical inputs
