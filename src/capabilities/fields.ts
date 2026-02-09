@@ -1,6 +1,8 @@
 import type { RSClientCore } from '../core/client.js';
 import type { FieldDefinition, FieldOption, Node } from '../core/types.js';
 import { ensureArray, toNumber } from '../utils/response.js';
+import { validateId } from '../core/errors.js';
+import { assignCapability } from '../utils/assign-capability.js';
 
 export interface FieldsCapability {
   /** Get all field definitions, optionally filtered by resource type. */
@@ -55,6 +57,7 @@ export function withFields<T extends RSClientCore>(client: T): T & FieldsCapabil
     },
 
     async getFieldOptions(fieldId: number): Promise<FieldOption[]> {
+      validateId(fieldId, 'field ID');
       const data = await client.makeRequest<FieldOption[]>('get_field_options', {
         ref: fieldId.toString(),
       });
@@ -62,6 +65,7 @@ export function withFields<T extends RSClientCore>(client: T): T & FieldsCapabil
     },
 
     async getFieldValues(fieldId: number): Promise<string[]> {
+      validateId(fieldId, 'field ID');
       const data = await client.makeRequest<string[]>('get_field_values', {
         field: fieldId.toString(),
       });
@@ -69,6 +73,8 @@ export function withFields<T extends RSClientCore>(client: T): T & FieldsCapabil
     },
 
     async getNodes(fieldId: number, parent?: number): Promise<Node[]> {
+      validateId(fieldId, 'field ID');
+      if (parent !== undefined) validateId(parent, 'parent node ID');
       // RS get_nodes params: $ref (field ID), $parent, $recursive, $offset, $rows, $name, ...
       const params: Record<string, string | number> = { ref: fieldId.toString() };
       if (parent !== undefined) params.parent = parent;
@@ -78,6 +84,8 @@ export function withFields<T extends RSClientCore>(client: T): T & FieldsCapabil
     },
 
     async setNode(fieldId: number, name: string, parent?: number): Promise<number> {
+      validateId(fieldId, 'field ID');
+      if (parent !== undefined) validateId(parent, 'parent node ID');
       // RS set_node params: $ref, $resource_type_field, $name, $parent, $order_by, $returnexisting
       // $ref=NULL for creating new nodes; $returnexisting=true to get existing node if name matches
       const params: Record<string, string | number | boolean> = {
@@ -95,6 +103,8 @@ export function withFields<T extends RSClientCore>(client: T): T & FieldsCapabil
     },
 
     async updateField(resourceId: number, fieldId: number, value: string): Promise<boolean> {
+      validateId(resourceId, 'resource ID');
+      validateId(fieldId, 'field ID');
       const result = await client.makeRequest<unknown>('update_field', {
         resource: resourceId.toString(),
         field: fieldId.toString(),
@@ -104,6 +114,7 @@ export function withFields<T extends RSClientCore>(client: T): T & FieldsCapabil
     },
 
     async resolveFieldDisplayName(fieldId: number, value: string | number | null): Promise<string> {
+      validateId(fieldId, 'field ID');
       if (value === null || value === undefined) return '';
       const str = String(value).trim();
       if (!str) return '';
@@ -117,5 +128,5 @@ export function withFields<T extends RSClientCore>(client: T): T & FieldsCapabil
     },
   };
 
-  return Object.assign(client, methods);
+  return assignCapability(client, methods);
 }

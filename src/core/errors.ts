@@ -58,3 +58,25 @@ export class SecurityError extends Error {
     this.name = 'SecurityError';
   }
 }
+
+/**
+ * Thrown when a function argument fails validation
+ * (e.g. non-positive-integer ID).
+ */
+export class ValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ValidationError';
+  }
+}
+
+/**
+ * Validate that a numeric ID is a positive integer.
+ * Defense-in-depth: RS validates server-side, but catching bad inputs
+ * early prevents malformed queries and aids debugging.
+ */
+export function validateId(value: number, name: string): void {
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new ValidationError(`${name} must be a positive integer, got: ${value}`);
+  }
+}

@@ -6,6 +6,8 @@ import type {
   AlternativeFile,
 } from '../core/types.js';
 import { ensureArray, toNumber } from '../utils/response.js';
+import { validateId } from '../core/errors.js';
+import { assignCapability } from '../utils/assign-capability.js';
 
 export interface ResourcesCapability {
   /** Get full resource metadata */
@@ -45,6 +47,7 @@ export interface ResourcesCapability {
 export function withResources<T extends RSClientCore>(client: T): T & ResourcesCapability {
   const methods: ResourcesCapability = {
     async getResource(ref: number): Promise<Resource | null> {
+      validateId(ref, 'resource ref');
       const data = await client.makeRequest<Resource | null>('get_resource_data', {
         resource: ref.toString(),
       });
@@ -52,6 +55,8 @@ export function withResources<T extends RSClientCore>(client: T): T & ResourcesC
     },
 
     async getResourceFieldData(ref: number, fieldId?: number): Promise<ResourceFieldData[]> {
+      validateId(ref, 'resource ref');
+      if (fieldId !== undefined) validateId(fieldId, 'field ID');
       const params: Record<string, string | number> = { resource: ref.toString() };
       if (fieldId !== undefined) params.field = fieldId;
 
@@ -64,6 +69,7 @@ export function withResources<T extends RSClientCore>(client: T): T & ResourcesC
     },
 
     async getResourcePath(ref: number, options: ResourcePathOptions = {}): Promise<string> {
+      validateId(ref, 'resource ref');
       const {
         size = 'pre',
         watermarked,
@@ -105,6 +111,7 @@ export function withResources<T extends RSClientCore>(client: T): T & ResourcesC
     },
 
     async getResourceLog(ref: number): Promise<unknown[]> {
+      validateId(ref, 'resource ref');
       const data = await client.makeRequest<unknown[]>('get_resource_log', {
         resource: ref.toString(),
       });
@@ -112,6 +119,7 @@ export function withResources<T extends RSClientCore>(client: T): T & ResourcesC
     },
 
     async getRelatedResources(ref: number): Promise<Resource[]> {
+      validateId(ref, 'resource ref');
       // RS get_related_resources param: $ref
       const data = await client.makeRequest<Resource[]>('get_related_resources', {
         ref: ref.toString(),
@@ -120,6 +128,7 @@ export function withResources<T extends RSClientCore>(client: T): T & ResourcesC
     },
 
     async getAlternativeFiles(ref: number): Promise<AlternativeFile[]> {
+      validateId(ref, 'resource ref');
       const data = await client.makeRequest<AlternativeFile[]>('get_alternative_files', {
         resource: ref.toString(),
       });
@@ -127,6 +136,7 @@ export function withResources<T extends RSClientCore>(client: T): T & ResourcesC
     },
 
     async createResource(resourceType: number, archive?: number): Promise<number> {
+      validateId(resourceType, 'resource type');
       const params: Record<string, string | number> = {
         resource_type: resourceType,
       };
@@ -139,6 +149,7 @@ export function withResources<T extends RSClientCore>(client: T): T & ResourcesC
     },
 
     async copyResource(ref: number): Promise<number> {
+      validateId(ref, 'resource ref');
       const result = await client.makeRequest<number | { ref: number }>('copy_resource', {
         from: ref.toString(),
       });
@@ -148,6 +159,7 @@ export function withResources<T extends RSClientCore>(client: T): T & ResourcesC
     },
 
     async deleteResource(ref: number): Promise<boolean> {
+      validateId(ref, 'resource ref');
       const result = await client.makeRequest<unknown>('delete_resource', {
         resource: ref.toString(),
       });
@@ -155,5 +167,5 @@ export function withResources<T extends RSClientCore>(client: T): T & ResourcesC
     },
   };
 
-  return Object.assign(client, methods);
+  return assignCapability(client, methods);
 }

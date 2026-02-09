@@ -7,6 +7,8 @@ export {
   ConfigurationError,
   BatchSizeLimitError,
   SecurityError,
+  ValidationError,
+  validateId,
 } from './core/errors.js';
 
 // Types
@@ -52,7 +54,8 @@ export {
 } from './factories.js';
 
 // Utilities
-export { generateSignature } from './utils/signature.js';
+export { generateSignature, constantTimeCompare } from './utils/signature.js';
 export { buildSignedQuery, buildQueryString } from './utils/query-builder.js';
 export { normalizeResponse, ensureArray, toNumber } from './utils/response.js';
 export { rewriteToInternalUrl } from './utils/url-rewriter.js';
+export { assignCapability } from './utils/assign-capability.js';

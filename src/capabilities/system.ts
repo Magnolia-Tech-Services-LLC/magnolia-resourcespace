@@ -1,6 +1,7 @@
 import type { RSClientCore } from '../core/client.js';
 import type { ResourceType, SystemStatus } from '../core/types.js';
 import { ensureArray } from '../utils/response.js';
+import { assignCapability } from '../utils/assign-capability.js';
 
 export interface SystemCapability {
   /** Get all available resource types. */
@@ -37,5 +38,5 @@ export function withSystem<T extends RSClientCore>(client: T): T & SystemCapabil
     },
   };
 
-  return Object.assign(client, methods);
+  return assignCapability(client, methods);
 }

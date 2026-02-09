@@ -1,6 +1,8 @@
 import type { RSClientCore } from '../core/client.js';
 import type { Resource, SearchResult, SearchOptions } from '../core/types.js';
 import { ensureArray } from '../utils/response.js';
+import { validateId } from '../core/errors.js';
+import { assignCapability } from '../utils/assign-capability.js';
 
 const DEFAULT_LIMIT = 24;
 
@@ -62,6 +64,7 @@ export function withSearch<T extends RSClientCore>(client: T): T & SearchCapabil
     },
 
     async searchByField(fieldId: number, value: string, options: SearchOptions = {}): Promise<Resource[]> {
+      validateId(fieldId, 'field ID');
       const {
         orderBy = 'relevance',
         offset = 0,
@@ -85,5 +88,5 @@ export function withSearch<T extends RSClientCore>(client: T): T & SearchCapabil
     },
   };
 
-  return Object.assign(client, searchMethods);
+  return assignCapability(client, searchMethods);
 }

@@ -1,5 +1,6 @@
 import type { RSClientCore } from '../core/client.js';
-import { BatchSizeLimitError } from '../core/errors.js';
+import { BatchSizeLimitError, validateId } from '../core/errors.js';
+import { assignCapability } from '../utils/assign-capability.js';
 
 export interface BatchCapability {
   /** Update a field value on multiple resources at once. */
@@ -36,12 +37,20 @@ function enforceLimit(ids: number[], max: number): void {
   }
 }
 
+function validateIds(ids: number[], name: string): void {
+  for (const id of ids) {
+    validateId(id, name);
+  }
+}
+
 export function withBatch<T extends RSClientCore>(client: T): T & BatchCapability {
   const max = client.config.maxBatchSize ?? 100;
 
   const methods: BatchCapability = {
     async batchFieldUpdate(resourceIds: number[], fieldId: number, value: string): Promise<boolean> {
       enforceLimit(resourceIds, max);
+      validateIds(resourceIds, 'resource ID');
+      validateId(fieldId, 'field ID');
       const result = await client.makeRequest<unknown>('update_field', {
         resource: resourceIds.join(','),
         field: fieldId.toString(),
@@ -52,6 +61,7 @@ export function withBatch<T extends RSClientCore>(client: T): T & BatchCapabilit
 
     async batchDelete(resourceIds: number[]): Promise<boolean> {
       enforceLimit(resourceIds, max);
+      validateIds(resourceIds, 'resource ID');
       const result = await client.makeRequest<unknown>('delete_resource', {
         resource: resourceIds.join(','),
       });
@@ -60,6 +70,8 @@ export function withBatch<T extends RSClientCore>(client: T): T & BatchCapabilit
 
     async batchCollectionAdd(collectionId: number, resourceIds: number[]): Promise<boolean> {
       enforceLimit(resourceIds, max);
+      validateId(collectionId, 'collection ID');
+      validateIds(resourceIds, 'resource ID');
       for (const id of resourceIds) {
         await client.makeRequest<unknown>('add_resource_to_collection', {
           resource: id.toString(),
@@ -71,6 +83,8 @@ export function withBatch<T extends RSClientCore>(client: T): T & BatchCapabilit
 
     async batchCollectionRemove(collectionId: number, resourceIds: number[]): Promise<boolean> {
       enforceLimit(resourceIds, max);
+      validateId(collectionId, 'collection ID');
+      validateIds(resourceIds, 'resource ID');
       for (const id of resourceIds) {
         await client.makeRequest<unknown>('remove_resource_from_collection', {
           resource: id.toString(),
@@ -82,6 +96,8 @@ export function withBatch<T extends RSClientCore>(client: T): T & BatchCapabilit
 
     async batchNodesAdd(resourceIds: number[], nodeIds: number[]): Promise<boolean> {
       enforceLimit(resourceIds, max);
+      validateIds(resourceIds, 'resource ID');
+      validateIds(nodeIds, 'node ID');
       // RS add_resource_nodes_multi params: $resourceid (CSV), $nodes (CSV)
       // Handles multiple resources + multiple nodes in a single call
       const result = await client.makeRequest<unknown>('add_resource_nodes_multi', {
@@ -93,6 +109,8 @@ export function withBatch<T extends RSClientCore>(client: T): T & BatchCapabilit
 
     async batchNodesRemove(resourceIds: number[], nodeIds: number[]): Promise<boolean> {
       enforceLimit(resourceIds, max);
+      validateIds(resourceIds, 'resource ID');
+      validateIds(nodeIds, 'node ID');
       // remove_resource_nodes is not a documented API endpoint.
       // Fall back to per-resource calls with comma-separated node IDs.
       const nodestring = nodeIds.join(',');
@@ -107,6 +125,7 @@ export function withBatch<T extends RSClientCore>(client: T): T & BatchCapabilit
 
     async batchArchiveStatus(resourceIds: number[], archiveStatus: number): Promise<boolean> {
       enforceLimit(resourceIds, max);
+      validateIds(resourceIds, 'resource ID');
       const result = await client.makeRequest<unknown>('update_resource_archive_status', {
         resource: resourceIds.join(','),
         archive: archiveStatus.toString(),
@@ -115,5 +134,5 @@ export function withBatch<T extends RSClientCore>(client: T): T & BatchCapabilit
     },
   };
 
-  return Object.assign(client, methods);
+  return assignCapability(client, methods);
 }

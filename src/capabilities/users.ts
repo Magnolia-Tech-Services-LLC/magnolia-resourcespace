@@ -1,6 +1,7 @@
 import type { RSClientCore } from '../core/client.js';
 import type { User, UserUpdateData, CreateUserParams } from '../core/types.js';
-import { SecurityError } from '../core/errors.js';
+import { SecurityError, validateId } from '../core/errors.js';
+import { assignCapability } from '../utils/assign-capability.js';
 import { ensureArray, toNumber } from '../utils/response.js';
 
 // ---------------------------------------------------------------------------
@@ -181,6 +182,7 @@ export function withUsers<T extends RSClientCore>(client: T): T & UsersCapabilit
     },
 
     async saveUser(userRef: number, data: UserUpdateData): Promise<{ success: boolean; error?: string }> {
+      validateId(userRef, 'user ref');
       // SECURITY: Allowlist fields to prevent privilege escalation.
       // RS save_user accepts usergroup, approved, ip_restrict, etc.
       // We must NEVER pass those.
@@ -231,7 +233,7 @@ export function withUsers<T extends RSClientCore>(client: T): T & UsersCapabilit
     },
   };
 
-  return Object.assign(client, methods);
+  return assignCapability(client, methods);
 }
 
 function normalizeUser(user: Record<string, unknown>): User {

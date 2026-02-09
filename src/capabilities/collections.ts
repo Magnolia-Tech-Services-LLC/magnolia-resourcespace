@@ -1,6 +1,8 @@
 import type { RSClientCore } from '../core/client.js';
 import type { Resource, Collection, SearchOptions, CreateCollectionParams } from '../core/types.js';
 import { ensureArray, toNumber } from '../utils/response.js';
+import { validateId } from '../core/errors.js';
+import { assignCapability } from '../utils/assign-capability.js';
 
 export interface CollectionsCapability {
   /** Get collections for the current user (or specified user). */
@@ -63,6 +65,7 @@ export function withCollections<T extends RSClientCore>(client: T): T & Collecti
     },
 
     async getCollectionResources(collectionId: number, options: SearchOptions = {}): Promise<Resource[]> {
+      validateId(collectionId, 'collection ID');
       const { limit = 9999, dataJoins } = options;
       // Uses do_search with collection syntax; param is $fetchrows not $limit
       const params: Record<string, string | number | boolean> = {
@@ -87,6 +90,7 @@ export function withCollections<T extends RSClientCore>(client: T): T & Collecti
     },
 
     async getFeaturedCollections(parent: number): Promise<Collection[]> {
+      validateId(parent, 'parent collection ID');
       const data = await client.makeRequest<unknown[]>('get_featured_collections', {
         parent: parent.toString(),
       });
@@ -117,6 +121,7 @@ export function withCollections<T extends RSClientCore>(client: T): T & Collecti
     },
 
     async deleteCollection(collectionId: number): Promise<boolean> {
+      validateId(collectionId, 'collection ID');
       // RS delete_collection param: $collection
       const result = await client.makeRequest<unknown>('delete_collection', {
         collection: collectionId.toString(),
@@ -125,6 +130,8 @@ export function withCollections<T extends RSClientCore>(client: T): T & Collecti
     },
 
     async addToCollection(collectionId: number, resourceId: number): Promise<boolean> {
+      validateId(collectionId, 'collection ID');
+      validateId(resourceId, 'resource ID');
       const result = await client.makeRequest<unknown>('add_resource_to_collection', {
         resource: resourceId.toString(),
         collection: collectionId.toString(),
@@ -133,6 +140,8 @@ export function withCollections<T extends RSClientCore>(client: T): T & Collecti
     },
 
     async removeFromCollection(collectionId: number, resourceId: number): Promise<boolean> {
+      validateId(collectionId, 'collection ID');
+      validateId(resourceId, 'resource ID');
       const result = await client.makeRequest<unknown>('remove_resource_from_collection', {
         resource: resourceId.toString(),
         collection: collectionId.toString(),
@@ -141,6 +150,7 @@ export function withCollections<T extends RSClientCore>(client: T): T & Collecti
     },
 
     async shareCollection(collectionId: number, emails: string[], message?: string): Promise<boolean> {
+      validateId(collectionId, 'collection ID');
       const params: Record<string, string | number> = {
         ref: collectionId.toString(),
         emails: emails.join(','),
@@ -151,5 +161,5 @@ export function withCollections<T extends RSClientCore>(client: T): T & Collecti
     },
   };
 
-  return Object.assign(client, methods);
+  return assignCapability(client, methods);
 }

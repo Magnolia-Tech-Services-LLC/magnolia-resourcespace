@@ -1,6 +1,8 @@
 import type { RSClientCore } from '../core/client.js';
 import type { AlternativeFile } from '../core/types.js';
 import { toNumber } from '../utils/response.js';
+import { validateId } from '../core/errors.js';
+import { assignCapability } from '../utils/assign-capability.js';
 
 export interface UploadCapability {
   /**
@@ -25,6 +27,7 @@ export interface UploadCapability {
 export function withUpload<T extends RSClientCore>(client: T): T & UploadCapability {
   const methods: UploadCapability = {
     async uploadFile(resourceId: number, filePath: string, options: { noExif?: boolean; autoRotate?: boolean; revert?: boolean } = {}): Promise<boolean> {
+      validateId(resourceId, 'resource ID');
       // RS upload_file params: $ref, $no_exif, $revert, $autorotate, $file_path
       const params: Record<string, string | number | boolean> = {
         ref: resourceId.toString(),
@@ -44,6 +47,7 @@ export function withUpload<T extends RSClientCore>(client: T): T & UploadCapabil
       description: string,
       filePath: string,
     ): Promise<number> {
+      validateId(resourceId, 'resource ID');
       // RS add_alternative_file params: $resource, $name, $description, $file_name, $file_extension,
       // $file_size, $alt_type, $file
       const result = await client.makeRequest<number | { ref: number }>('add_alternative_file', {
@@ -58,5 +62,5 @@ export function withUpload<T extends RSClientCore>(client: T): T & UploadCapabil
     },
   };
 
-  return Object.assign(client, methods);
+  return assignCapability(client, methods);
 }

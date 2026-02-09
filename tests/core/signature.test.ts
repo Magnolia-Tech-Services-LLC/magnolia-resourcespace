@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { generateSignature } from '../../src/utils/signature.js';
+import { generateSignature, constantTimeCompare } from '../../src/utils/signature.js';
 import { buildSignedQuery, buildQueryString } from '../../src/utils/query-builder.js';
 
 describe('generateSignature', () => {
@@ -48,6 +48,32 @@ describe('buildQueryString', () => {
     expect(qs).not.toContain('param1');
     expect(qs).not.toContain('param2');
     expect(qs).toContain('param3=value');
+  });
+});
+
+describe('constantTimeCompare', () => {
+  it('returns true for identical strings', () => {
+    expect(constantTimeCompare('abc123', 'abc123')).toBe(true);
+  });
+
+  it('returns false for different strings of same length', () => {
+    expect(constantTimeCompare('abc123', 'abc124')).toBe(false);
+  });
+
+  it('returns false for different length strings', () => {
+    expect(constantTimeCompare('short', 'longer_string')).toBe(false);
+  });
+
+  it('returns true for empty strings', () => {
+    expect(constantTimeCompare('', '')).toBe(true);
+  });
+
+  it('works with SHA256 hex strings', () => {
+    const sig1 = generateSignature('key', 'query');
+    const sig2 = generateSignature('key', 'query');
+    const sig3 = generateSignature('key', 'different');
+    expect(constantTimeCompare(sig1, sig2)).toBe(true);
+    expect(constantTimeCompare(sig1, sig3)).toBe(false);
   });
 });
 
