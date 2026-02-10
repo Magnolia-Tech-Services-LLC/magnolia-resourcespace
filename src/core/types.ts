@@ -73,6 +73,8 @@ export interface SearchResult {
   /** Number of resources returned in this page (NOT the server-side total). */
   count: number;
   offset: number;
+  /** True when additional results exist beyond this page on the server. */
+  hasMore?: boolean;
 }
 
 export interface ResourceFieldData {

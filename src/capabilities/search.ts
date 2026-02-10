@@ -39,11 +39,13 @@ export function withSearch<T extends RSClientCore>(client: T): T & SearchCapabil
       } = options;
 
       // RS do_search params: $search, $restypes, $order_by, $archive, $fetchrows, $sort, $offset
+      // Request one extra row so we can detect whether more results exist
+      // beyond this page (RS do_search only returns an array, no total count).
       const params: Record<string, string | number | boolean> = {
         search: query,
         order_by: orderBy,
         offset,
-        fetchrows: limit,
+        fetchrows: limit + 1,
       };
 
       if (sort) params.sort = sort;
@@ -56,10 +58,15 @@ export function withSearch<T extends RSClientCore>(client: T): T & SearchCapabil
       const resources = await client.makeRequest<Resource[]>('do_search', params);
       const result = ensureArray<Resource>(resources);
 
+      // If we got more than `limit`, there are additional results on the server.
+      const hasMore = result.length > limit;
+      const page = hasMore ? result.slice(0, limit) : result;
+
       return {
-        resources: result,
-        count: result.length,
+        resources: page,
+        count: page.length,
         offset,
+        hasMore,
       };
     },
 
