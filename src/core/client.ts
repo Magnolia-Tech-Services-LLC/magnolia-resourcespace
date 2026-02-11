@@ -1,5 +1,5 @@
 import type { RSConfig, RSLogger } from './types.js';
-import { ResourceSpaceError } from './errors.js';
+import { ResourceSpaceError, PermissionError } from './errors.js';
 import { validateConfig } from './config.js';
 import { buildSignedQuery } from '../utils/query-builder.js';
 import { normalizeResponse } from '../utils/response.js';
@@ -92,6 +92,14 @@ export class RSClientCore {
           functionName,
           response.status,
         );
+      }
+
+      // Treat 401/403 as permission errors rather than silently passing through.
+      // RS returns 403 with `[]` for functions requiring permissions the user lacks
+      // (e.g. get_resource_type_fields needs permission 'a'). Without this check,
+      // the empty array is treated as a valid (but empty) response, poisoning caches.
+      if (response.status === 401 || response.status === 403) {
+        throw new PermissionError(functionName, `HTTP ${response.status}`);
       }
 
       // Read response body as text first, then normalize
